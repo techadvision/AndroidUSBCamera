@@ -26,9 +26,14 @@
 # Note: Supporting GCC on NDK is already deprecated and GCC will be removed from NDK soon.
 #NDK_TOOLCHAIN_VERSION := 4.9
 
-APP_PLATFORM := android-14
+APP_PLATFORM := android-24
+# APP_PLATFORM := android-14
 #APP_ABI :=arm64-v8a armeabi-v7a
 # /*if you want x86 or x86_64, please open it*/
-APP_ABI :=arm64-v8a armeabi-v7a x86 x86_64
+APP_ABI :=arm64-v8a
+# APP_ABI :=arm64-v8a armeabi-v7a x86 x86_64
 #APP_OPTIM := debug
 APP_OPTIM := release
+
+# Apply 16 KB LOAD alignment to every shared lib linked in this module
+APP_LDFLAGS += -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384

@@ -264,5 +264,8 @@ LOCAL_LDLIBS := -L$(SYSROOT)/usr/lib -ldl	# to avoid NDK issue(no need for stati
 LOCAL_WHOLE_STATIC_LIBRARIES = jpeg-turbo1500_static
 
 LOCAL_MODULE := jpeg-turbo1500
+
+LOCAL_LDFLAGS  += -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384
+
 include $(BUILD_SHARED_LIBRARY)
 

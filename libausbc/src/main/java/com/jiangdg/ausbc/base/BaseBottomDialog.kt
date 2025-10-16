@@ -17,6 +17,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.jiangdg.ausbc.R
+import com.google.android.material.R as MaterialR
 
 /** Base bottom sheet dialog
  *
@@ -49,15 +50,27 @@ abstract class BaseBottomDialog: BottomSheetDialogFragment()  {
     override fun onStart() {
         super.onStart()
         dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
+
         val sheetDialog = dialog as BottomSheetDialog
-        sheetDialog.delegate.findViewById<FrameLayout>(R.id.design_bottom_sheet)?.apply {
-            background = ColorDrawable(Color.TRANSPARENT)
+        val bottomSheet = sheetDialog.findViewById<FrameLayout>(MaterialR.id.design_bottom_sheet)
+        bottomSheet?.apply {
+            background = ColorDrawable(android.graphics.Color.TRANSPARENT)
             val params = layoutParams as CoordinatorLayout.LayoutParams
             params.height = getPeekHeight()
             layoutParams = params
             mBehavior = BottomSheetBehavior.from(this)
             mBehavior?.peekHeight = getPeekHeight()
             mBehavior?.state = BottomSheetBehavior.STATE_EXPANDED
+//        dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
+//        val sheetDialog = dialog as BottomSheetDialog
+//        sheetDialog.delegate.findViewById<FrameLayout>(R.id.design_bottom_sheet)?.apply {
+//            background = ColorDrawable(Color.TRANSPARENT)
+//            val params = layoutParams as CoordinatorLayout.LayoutParams
+//            params.height = getPeekHeight()
+//            layoutParams = params
+//            mBehavior = BottomSheetBehavior.from(this)
+//            mBehavior?.peekHeight = getPeekHeight()
+//            mBehavior?.state = BottomSheetBehavior.STATE_EXPANDED
         }
     }
 

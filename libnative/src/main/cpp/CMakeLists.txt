@@ -27,3 +27,9 @@ find_library(
 target_link_libraries(
         nativelib
         ${log-lib})
+
+# ✅ 16 KB page-size for Android 16KB devices
+target_link_options(nativelib PRIVATE
+        "-Wl,-z,max-page-size=16384"
+        "-Wl,-z,common-page-size=16384"
+)

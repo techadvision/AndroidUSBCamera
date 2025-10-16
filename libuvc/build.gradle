@@ -1,75 +1,79 @@
-apply plugin: 'com.android.library'
-
-import org.apache.tools.ant.taskdefs.condition.Os
+plugins {
+	id 'com.android.library'
+	// id 'org.jetbrains.kotlin.android' // uncomment if this module has Kotlin sources
+}
 
 android {
-	compileSdkVersion rootProject.ext.versionCompiler
-	buildToolsVersion rootProject.ext.versionBuildTool
+	namespace "com.jiangdg.uvccamera"
+	compileSdk 34
 
+	defaultConfig {
+		minSdk 24
+		targetSdk 34
+
+		ndk{
+			abiFilters 'arm64-v8a'
+		}
+
+		// If you have an Application.mk, point to it here (adjust the path if needed)
+		externalNativeBuild {
+			ndkBuild {
+//				arguments "NDK_APPLICATION_MK=${file('src/main/jni/Application.mk')}"
+				arguments "APP_ABI=arm64-v8a",
+						// inject 16 KB flags globally
+						"APP_LDFLAGS+=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384",
+						// use your Application.mk (also contains the flags/ABI)
+						"NDK_APPLICATION_MK=${file('src/main/jni/Application.mk')}",
+						// verbose so you can see the full ld.lld lines
+						"V=1"
+			}
+		}
+	}
+
+	// Use the built-in ndkBuild integration instead of custom Exec tasks
+	externalNativeBuild {
+		ndkBuild {
+			path file('src/main/jni/Android.mk')
+		}
+	}
+
+	// Java 17 for AGP 8.x
 	compileOptions {
-		sourceCompatibility rootProject.ext.javaSourceCompatibility
-		targetCompatibility rootProject.ext.javaTargetCompatibility
+		sourceCompatibility JavaVersion.VERSION_17
+		targetCompatibility JavaVersion.VERSION_17
+	}
+	// If Kotlin is applied for this module:
+	// kotlinOptions { jvmTarget = "17" }
+
+	// New lint block (replaces lintOptions)
+	lint {
+		checkReleaseBuilds = false
+		abortOnError = false
+		disable += ['MissingTranslation']
 	}
 
-    defaultConfig {
-        minSdkVersion rootProject.ext.minSdkVersion
-		targetSdkVersion rootProject.ext.versionTarget
-    }
-
-	lintOptions {
-		checkReleaseBuilds false
-		// Or, if you prefer, you can continue to check for errors in release builds,
-		// but continue the build even when errors are found:
-		abortOnError false
-		// The demo app does not have translations.
-		disable 'MissingTranslation'
+	buildTypes {
+		release {
+			minifyEnabled false
+			proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.txt'
+		}
+		debug {
+			// keep defaults
+		}
 	}
 
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.txt'
-        }
-    }
+	// Pin the NDK we’ll use for the 16KB flags rebuild
+	ndkVersion "26.1.10909125"
 }
-
-tasks.withType(JavaCompile) {
-	compileTask -> compileTask.dependsOn ndkBuild
-}
-
-String getNdkBuildPath() {
-	def ndkBuildingDir = System.getenv("NDK_HOME")
-	if (ndkBuildingDir==null || ndkBuildingDir.isEmpty()) {
-		Properties properties = new Properties()
-		properties.load(project.rootProject.file('local.properties').newDataInputStream())
-		ndkBuildingDir = properties.getProperty("ndk.dir")
-	}
-	def ndkBuildPath = ndkBuildingDir
-	if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-		ndkBuildPath = ndkBuildingDir + '/ndk-build.cmd'
-	} else {
-		ndkBuildPath = ndkBuildingDir + '/ndk-build'
-	}
-	return ndkBuildPath
-}
-
-task ndkBuild(type: Exec, description: 'Compile JNI source via NDK') {
-	println('executing ndkBuild')
-	def ndkBuildPath = getNdkBuildPath();
-	commandLine ndkBuildPath, '-j8', '-C', file('src/main').absolutePath
-}
-
-task ndkClean(type: Exec, description: 'clean JNI libraries') {
-	println('executing ndkBuild clean')
-	def ndkBuildPath = getNdkBuildPath();
-	commandLine ndkBuildPath, 'clean', '-C', file('src/main').absolutePath
-}
-
-clean.dependsOn 'ndkClean'
 
 dependencies {
-    implementation fileTree(dir: new File(buildDir, 'libs'), include: '*.jar')
+	// If you don’t actually have jars in a build/libs folder, you can drop this.
+	implementation fileTree(dir: "libs", include: ["*.jar"])
+
+	// If androidXVersion is defined in root ext/gradle.properties, keep it; otherwise hardcode:
+	// implementation "androidx.appcompat:appcompat:1.7.0"
 	implementation "androidx.appcompat:appcompat:${androidXVersion}"
+
 	implementation 'com.elvishew:xlog:1.11.0'
-//	implementation project(path: ':libuvccommon')
+	// implementation project(path: ':libuvccommon') // keep commented if unused
 }

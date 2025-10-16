@@ -79,19 +79,49 @@ class Mp4Muxer(
 
     init {
         this.mCaptureCallBack = callBack
-        this.mContext= context
+        this.mContext = context
         try {
-            if (path.isNullOrEmpty()) {
-                val date = mDateFormat.format(System.currentTimeMillis())
-                path = "$mCameraDir/VID_JJCamera_$date"
+            val date = mDateFormat.format(System.currentTimeMillis())
+            val isQPlus = MediaUtils.isAboveQ()
+
+            // Base directory (Q+: app-private; pre-Q: DCIM/Camera)
+            val baseDir: File = if (isQPlus) {
+                File(context?.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "BoatVideo").apply { mkdirs() }
+            } else {
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera").apply { mkdirs() }
             }
+
+            if (path.isNullOrEmpty()) {
+                path = File(baseDir, "VID_Boat_$date").absolutePath
+            } else if (isQPlus) {
+                // Force into app-private on Q+ even if a public path was passed in
+                val name = File(path!!).nameWithoutExtension.ifBlank { "VID_Boat_$date" }
+                path = File(baseDir, name).absolutePath
+            }
+
             mOriginalPath = path
-            path = "${path}.mp4"
+            path = "$path.mp4"
+
             mMediaMuxer = MediaMuxer(path!!, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         } catch (e: Exception) {
             mCaptureCallBack?.onError(e.localizedMessage)
             Logger.e(TAG, "init media muxer failed, err = ${e.localizedMessage}", e)
         }
+
+//        this.mCaptureCallBack = callBack
+//        this.mContext= context
+//        try {
+//            if (path.isNullOrEmpty()) {
+//                val date = mDateFormat.format(System.currentTimeMillis())
+//                path = "$mCameraDir/VID_JJCamera_$date"
+//            }
+//            mOriginalPath = path
+//            path = "${path}.mp4"
+//            mMediaMuxer = MediaMuxer(path!!, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+//        } catch (e: Exception) {
+//            mCaptureCallBack?.onError(e.localizedMessage)
+//            Logger.e(TAG, "init media muxer failed, err = ${e.localizedMessage}", e)
+//        }
     }
 
     /**
@@ -186,36 +216,95 @@ class Mp4Muxer(
         }
     }
 
+    @Synchronized
     private fun saveNewFileIfNeed() {
         try {
-            val endMillis = System.currentTimeMillis()
-            if (durationInSec == 0L) {
-                return
-            }
-            if (endMillis - mBeginMillis <= durationInSec * 1000) {
-                return
-            }
+            if (durationInSec == 0L) return
+            val now = System.currentTimeMillis()
+            if (now - mBeginMillis <= durationInSec * 1000) return
 
-            mMediaMuxer?.stop()
-            mMediaMuxer?.release()
+            // 1) we need to rotate: remember the file we just recorded
+            val finishedPath = path
+
+            // 2) stop & release current muxer
+            try { mMediaMuxer?.stop() } catch (_: Exception) {}
+            try { mMediaMuxer?.release() } catch (_: Exception) {}
             mMediaMuxer = null
+
+            // 3) publish the finished file to MediaStore (Q+: copy to DCIM/CarpPilot; pre-Q: DATA)
+            insertDCIM(mContext, finishedPath)
+
+            // reset state
             mAudioTrackerIndex = -1
             mVideoTrackerIndex = -1
             mAudioPts = 0L
             mVideoPts = 0L
-            insertDCIM(mContext, path)
 
-            path = "${mOriginalPath}_${++mFileSubIndex}.mp4"
-            mMediaMuxer = MediaMuxer(path!!, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            addTracker(mVideoFormat, true)
-            addTracker(mAudioFormat, false)
-        } catch (e: Exception) {
-            mMainHandler.post {
-                mCaptureCallBack?.onError(e.localizedMessage)
+            // 4) create next segment in the same base location policy as init()
+            val isQPlus = MediaUtils.isAboveQ()
+            val baseDir: File = if (isQPlus) {
+                File(mContext?.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "CarpPilot").apply { mkdirs() }
+            } else {
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera").apply { mkdirs() }
             }
-            Logger.e(TAG, "release media muxer failed, err = ${e.localizedMessage}", e)
+
+            mFileSubIndex += 1
+            val baseName = File(mOriginalPath!!).name   // mOriginalPath is the base without ".mp4"
+            path = File(baseDir, "${baseName}_${mFileSubIndex}.mp4").absolutePath
+
+            mMediaMuxer = MediaMuxer(path!!, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+            // 5) re-add tracks; addTracker will (re)start the muxer when both are present
+            mVideoFormat?.let { addTracker(it, true) }
+            if (!isVideoOnly) mAudioFormat?.let { addTracker(it, false) }
+
+            mBeginMillis = now
+        } catch (e: Exception) {
+            mMainHandler.post { mCaptureCallBack?.onError(e.localizedMessage) }
+            Logger.e(TAG, "rotate/saveNewFileIfNeed failed, err = ${e.localizedMessage}", e)
         }
     }
+
+
+//    private fun saveNewFileIfNeed() {
+//        try {
+//            val isQPlus = MediaUtils.isAboveQ()
+//            val baseDir: File = if (isQPlus) {
+//                File(mContext?.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "CarpPilot").apply { mkdirs() }
+//            } else {
+//                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM), "Camera").apply { mkdirs() }
+//            }
+//            path = File(baseDir, "${File(mOriginalPath!!).name}_${++mFileSubIndex}.mp4").absolutePath
+//            mMediaMuxer = MediaMuxer(path!!, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+//
+//            val endMillis = System.currentTimeMillis()
+//            if (durationInSec == 0L) {
+//                return
+//            }
+//            if (endMillis - mBeginMillis <= durationInSec * 1000) {
+//                return
+//            }
+//
+//            mMediaMuxer?.stop()
+//            mMediaMuxer?.release()
+//            mMediaMuxer = null
+//            mAudioTrackerIndex = -1
+//            mVideoTrackerIndex = -1
+//            mAudioPts = 0L
+//            mVideoPts = 0L
+//            insertDCIM(mContext, path)
+//
+//            path = "${mOriginalPath}_${++mFileSubIndex}.mp4"
+//            mMediaMuxer = MediaMuxer(path!!, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+//            addTracker(mVideoFormat, true)
+//            addTracker(mAudioFormat, false)
+//        } catch (e: Exception) {
+//            mMainHandler.post {
+//                mCaptureCallBack?.onError(e.localizedMessage)
+//            }
+//            Logger.e(TAG, "release media muxer failed, err = ${e.localizedMessage}", e)
+//        }
+//    }
 
     /**
      * Release mp4 muxer resource
@@ -244,19 +333,88 @@ class Mp4Muxer(
     fun getSavePath() = path
 
     private fun insertDCIM(context: Context?, videoPath: String?, notifyOut: Boolean = false) {
-        context?.let { ctx ->
-            if (videoPath.isNullOrEmpty()) {
-                return
-            }
-            ctx.contentResolver.let { content ->
-                val uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                content.insert(uri, getVideoContentValues(videoPath))
-                mMainHandler.post {
-                    mCaptureCallBack?.onComplete(this.path)
+        context ?: return
+        val srcPath = videoPath ?: return
+        val file = File(srcPath)
+        if (!file.exists() || file.length() == 0L) return
+
+        try {
+            val cr = context.contentResolver
+            if (MediaUtils.isAboveQ()) {
+                val name = file.name // ends with .mp4
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                    put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DCIM}/CarpPilot")
+                    put(MediaStore.Video.Media.IS_PENDING, 1)
+                    put(MediaStore.MediaColumns.DATE_ADDED, System.currentTimeMillis() / 1000)
+                    put(MediaStore.Video.Media.DATE_TAKEN, System.currentTimeMillis())
                 }
+                val uri = cr.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                if (uri == null) {
+                    mMainHandler.post { mCaptureCallBack?.onError("MediaStore insert failed") }
+                    return
+                }
+
+                // Copy file -> content:// (no channels on OutputStream; just stream copy)
+                cr.openOutputStream(uri)?.let { out ->
+                    java.io.FileInputStream(file).use { input ->
+                        input.copyTo(out)
+                    }
+                } ?: throw java.io.IOException("openOutputStream returned null")
+
+                // Optional: set duration (ms)
+                runCatching {
+                    val mmr = MediaMetadataRetriever()
+                    mmr.setDataSource(srcPath)
+                    mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong()?.let { dur ->
+                        cr.update(uri, ContentValues().apply {
+                            put(MediaStore.Video.VideoColumns.DURATION, dur)
+                        }, null, null)
+                    }
+                    mmr.release()
+                }
+
+                // Make it visible
+                cr.update(uri, ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }, null, null)
+
+                // Remove temp
+                runCatching { file.delete() }
+
+                mMainHandler.post { mCaptureCallBack?.onComplete(uri.toString()) }
+            } else {
+                // Pre-Q: legacy insert using DATA
+                val values = ContentValues().apply {
+                    put(MediaStore.Video.Media.DATA, srcPath)
+                    put(MediaStore.Video.Media.DISPLAY_NAME, file.name)
+                    put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                    put(MediaStore.Video.Media.SIZE, file.length())
+                    put(MediaStore.Video.Media.DURATION, getLocalVideoDuration(file.path))
+                }
+                cr.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+                mMainHandler.post { mCaptureCallBack?.onComplete(srcPath) }
             }
+        } catch (e: Exception) {
+            mMainHandler.post { mCaptureCallBack?.onError(e.localizedMessage) }
+            Logger.e(TAG, "insertDCIM failed, err = ${e.localizedMessage}", e)
         }
     }
+
+
+//    private fun insertDCIM(context: Context?, videoPath: String?, notifyOut: Boolean = false) {
+//        context?.let { ctx ->
+//            if (videoPath.isNullOrEmpty()) {
+//                return
+//            }
+//            ctx.contentResolver.let { content ->
+//                val uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+//                content.insert(uri, getVideoContentValues(videoPath))
+//                mMainHandler.post {
+//                    mCaptureCallBack?.onComplete(this.path)
+//                }
+//            }
+//        }
+//    }
 
     private fun getVideoContentValues(path: String): ContentValues {
         val file = File(path)
